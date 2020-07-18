@@ -1,10 +1,10 @@
 #!/bin/bash
 OPNS_VER=20.1				# OPNSense Version
-LAN_PORT=ens1				# Physical interface for the LAN
-LAN_CIDR=10.5.0.0/16			# CIDR for the LAN
-WAN_PORTS=eno1,eno2,eno3,eno4		# Comma delimited list of physical interfaces used for WAN failover
+LAN_PORT=eth0				# Physical interface for the LAN
+LAN_CIDR=10.2.0.0/16			# CIDR for the LAN
+WAN_PORTS=eth1,eth2,eth3		# Comma delimited list of physical interfaces used for WAN failover
 WWAN_USB=10a9:6064			# Comma delimited list of (Cellular) USB Ethernet Device IDs
-ZT_ID=xxxxxxxxxxxxxxxx			# Zerotier Network ID
+ZT_ID=""				# Zerotier Network ID
 
 # Convert WAN_PORTS to array
 if [[ "$WAN_PORTS" == *","* ]]; then 
