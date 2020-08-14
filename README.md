@@ -114,4 +114,4 @@ We'll need to add a route for the Zerotier clients to talk to each other. You ca
    * 192.168.195.*
    * 192.168.196.*
 
-Do not worry about adding any other routes. WondwerWall configured Free Range Routing (FFR) in OPNsense and will dynamically configure routing paths to each site over the Zerotier network.
+Do not worry about adding any other routes. WondwerWall will automatically configure Free Range Routing (FFR) in OPNsense and will dynamically configure routing paths to each site over the Zerotier network.
