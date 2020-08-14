@@ -1,25 +1,45 @@
 #!/bin/bash
+LONG_OPTS=(
+    "opnsense-version:"
+    "man-vmbr:"
+    "man-iface:"
+    "man-cidr:"
+    "lan-vmbrs:"
+    "lan-ifaces:"
+    "wan-vmbrs:"
+    "wan-ifaces:"
+    "usb-ids:"
+    "zt-net-id:"
+    "zt-lan-cidr:"
+    "help"
+    "revert"
+)
 
 OPTS=$(getopt \
-    --longoptions "opnsense-version:,man-iface:,man-cidr:,lan-ifaces:,wan-ifaces:,usb-ids:,zt-net-id:,zt-lan-cidr:,help,revert" \
+    --longoptions "$(printf "%s," "${LONG_OPTS[@]}")" \
     --name "$(basename "$0")" \
     --options "" \
     -- "$@"
 )
-
-echo "$OPTS"
 eval set -- "$OPTS"
 
+# Default Values
 OPNS_VER=20.7
 MAN_CIDR=192.168.1.0/24
 ZT_LAN_MAP=10.0.0.0/16
+if [ -f /etc/pve/local/opnsense/zerotier/networks.d/*.local.conf ]; then
+    ZT_ID=$(ls /etc/pve/local/opnsense/zerotier/networks.d/*.local.conf | awk -F/ '{print $NF}' | awk -F. '{print $1}')
+fi
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --opnsense-version ) OPNS_VER="$2";   shift 2;;
+        --man-vmbr )         MAN_VMBR="$2";   shift 2;;
         --man-iface )        MAN_IFACE="$2";  shift 2;;
         --man-cidr )         MAN_CIDR="$2";   shift 2;;
+        --lan-vmbrs )        LAN_VMBRS="$2";  shift 2;;
         --lan-ifaces )       LAN_IFACES="$2"; shift 2;;
+        --wan-vmbrs )        WAN_VMBRS="$2";  shift 2;;
         --wan-ifaces )       WAN_IFACES="$2"; shift 2;;
         --usb-ids )          USB_IDS="$2";    shift 2;;
         --zt-net-id )        ZT_ID="$2";      shift 2;;
@@ -32,9 +52,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo OPNS_VER=$OPNS_VER
+echo MAN_VMBR=$MAN_VMBR
 echo MAN_IFACE=$MAN_IFACE
 echo MAN_CIDR=$MAN_CIDR
+echo LAN_VMBRS=$LAN_VMBRS
 echo LAN_IFACES=$LAN_IFACES
+echo WAN_VMBRS=$WAN_VMBRS
 echo WAN_IFACES=$WAN_IFACES
 echo USB_IDS=$USB_IDS
 echo ZT_ID=$ZT_ID
@@ -48,16 +71,31 @@ WONDERWALL INSTALLATION SCRIPT OPTIONS:
                         run, so it's rare this would ever need to be set.
         Optional:    Yes
         Default:     20.7
+    --man-vmbr
+        Description: L3 bridge to use for the Management interface. If no value
+                        is given a L3 bridge with no interfaces will be created.
+        Example:     vmbr0
     --man-iface
         Description: Physical interface for the management network.
-                     If no interface is given a L3 bridge
+                     If no interface is given a L3 bridge with no interfaces
+                        will be created.
         Example:     ens1
+        WARNING:     Using this option will replace the current network config.
     --man-cidr
         Description: CIDR used by the Management network.
                      OPNsense will be configured to use the first available IP
                         address. Proxmox will be configured to use the second
                         available IP address.
         Default:     192.168.1.0/24
+    --lan-vmbrs
+        Description: Comma delimited list of L3 bridges defined by Proxmox. 
+                     Each bridge will be configured in OPNsense as an individual
+                        interface. Each interface in OPNsense will be
+                        configured based on the IP addressed provided by
+                        Zerotier, relative to the --zt-lan-cidr value. DHCP 
+                        services will be configure for the last half of the 
+                        subnet.
+        Example:     vmbr1,vmbr2
     --lan-ifaces
         Description: Comma delimited list of physical interfaces used for LANs. 
                      Each interface will have it's own L3 bridge. Each bridge
@@ -68,11 +106,23 @@ WONDERWALL INSTALLATION SCRIPT OPTIONS:
                         services will be configure for the last half of the 
                         subnet.
         Example:     eth0,eth1,eth2,eth3
+        WARNING:     Using this option will replace the current network config.
+    --wan-vmbrs
+        Description: Comma delimited list of L3 bridges defined by Proxmox.
+                     Each bridge will be configured in OPNsense as an individual
+                        interface. Each interface in OPNsense DHCP will be used
+                        on all interfaces. WAN failover will be automatically 
+                        configured in a tier based on the provided order.
+        Example:     vmbr3,vmbr4
     --wan-ifaces
         Description: Comma delimited list of physical interfaces used for WANs.
-                     DHCP will be used on all interfaces. WAN failover will be
-                        automatically configured.
+                     Each interface will have it's own L3 bridge. Each bridge
+                        will be configured in OPNsense as an individual
+                        interface. Each interface in OPNsense DHCP will be used
+                        on all interfaces. WAN failover will be automatically 
+                        configured in a tier based on the provided order.
         Example:     eno1,eno2,eno3,eno4
+        WARNING:     Using this option will replace the current network config.
     --usb-ids
         Description: Comma delimited list of USB Device IDs. 
                      **Must be USB Ethernet devices.
@@ -87,27 +137,9 @@ WONDERWALL INSTALLATION SCRIPT OPTIONS:
         Description: Revert changes, made by the installer script, back to
                         right before the first time the script was run.
     --help
+        Description: Displays this message.
 EOF
     exit
-fi
-
-# Convert LAN_PORT to array
-if [[ "$LAN_IFACES" == *","* ]]; then 
-    IFS=',' read -r -a LAN_IFACES <<< "$LAN_IFACES"
-else
-    LAN_IFACES=($LAN_IFACES)
-fi
-# Convert WAN_IFACES to array
-if [[ "$WAN_IFACES" == *","* ]]; then 
-    IFS=',' read -r -a WAN_IFACES <<< "$WAN_IFACES"
-else
-    WAN_IFACES=($WAN_IFACES)
-fi
-# Convert USB_IDS to array
-if [[ "$USB_IDS" == *","* ]]; then 
-    IFS=',' read -r -a USB_IDS <<< "$USB_IDS"
-else
-    USB_IDS=($USB_IDS)
 fi
 
 console_message() {
@@ -123,15 +155,67 @@ console_message() {
     echo "$output" 1>&2
 }
 
+# Input Validation Checks
+## Make sure we have some sort of networks to work with
+if [[ -z "$MAN_VMBR" && -z "$LAN_VMBRS" && -z "$WAN_VMBRS" && -z "$MAN_IFACE" && -z "$LAN_IFACES" && -z "$WAN_IFACES" ]]; then
+    console_message "ERROR!!! No interfaces of bridges specifed so there's nothing to set up."
+    exit 6
+fi
+## Do not allow VMBR and IFACE combos
+vmbr_iface_error="ERROR!!! You cannot use any combination of the --xxx-vmbr(s) and --xxx-iface(s) options. When the --man-iface, --lan-ifaces, and/or --wan-ifaces options are used, the network configuration is completely replaced."
+if [[ ! -z "$MAN_VMBR" || ! -z "$LAN_VMBRS" ||  ! -z "$WAN_VMBRS" ]]; then
+    if [[ ! -z "$MAN_IFACE" || ! -z "$LAN_IFACES" ||  ! -z "$WAN_IFACES" ]]; then
+        console_message $vmbr_iface_error
+        exit 6
+    fi
+fi
+## Validate CIDR
+validate_cidr() {
+    if [[ ! "$1" =~ ^([0-9\.\/]*$) ]]; then return 1; fi
+    IFS="./" read -r ip1 ip2 ip3 ip4 N <<< $1
+    if [[ -z $ip1 || -z $ip2 || -z $ip3 || -z $ip4 || -z $N ]]; then return 1; fi
+    if [[ $ip1 -gt 255 || $ip2 -gt 255 || $ip3 -gt 255 || $ip4 -gt 255 || $N -gt 32 ]]; then return 1; fi
+    return 0
+}
+if ! validate_cidr $MAN_CIDR; then console_message "ERROR!!! --man-cidr \"$MAN_CIDR\" is not valid CIDR notation."; exit 6; fi
+if ! validate_cidr $ZT_LAN_MAP; then console_message "ERROR!!! --zt-lan-cidr \"$ZT_LAN_MAP\" is not valid CIDR notation."; exit 6; fi
+## Zerotier Network ID
+if [[ ! "$ZT_ID" =~ ^([0-9a-fA-F]*$) ]] || [ $(echo $ZT_ID | wc -c) -ne 17 ]; then console_message "ERROR!!! --zt-net-id \"$ZT_ID\" is not a valid Zerotier network ID."; exit 6; fi
+
+# Convert LAN_VMBRS to array
+if [[ "$LAN_VMBRS" == *","* ]]; then 
+    IFS=',' read -r -a LAN_VMBRS <<< "$LAN_VMBRS"
+else
+    LAN_VMBRS=($LAN_VMBRS)
+fi
+# Convert LAN_IFACES to array
+if [[ "$LAN_IFACES" == *","* ]]; then 
+    IFS=',' read -r -a LAN_IFACES <<< "$LAN_IFACES"
+else
+    LAN_IFACES=($LAN_IFACES)
+fi
+# Convert WAN_VMBRS to array
+if [[ "$WAN_VMBRS" == *","* ]]; then 
+    IFS=',' read -r -a WAN_VMBRS <<< "$WAN_VMBRS"
+else
+    WAN_VMBRS=($WAN_VMBRS)
+fi
+# Convert WAN_IFACES to array
+if [[ "$WAN_IFACES" == *","* ]]; then 
+    IFS=',' read -r -a WAN_IFACES <<< "$WAN_IFACES"
+else
+    WAN_IFACES=($WAN_IFACES)
+fi
+# Convert USB_IDS to array
+if [[ "$USB_IDS" == *","* ]]; then 
+    IFS=',' read -r -a USB_IDS <<< "$USB_IDS"
+else
+    USB_IDS=($USB_IDS)
+fi
+
 clear_network() {
-    ip a flush dev $MAN_IFACE
-    for i in "${LAN_IFACES[@]}"; do
-        echo "    Flushing $i IP addresses..."
-        ip a flush dev $i
-    done
-    for i in "${WAN_IFACES[@]}"; do
-        echo "    Flushing $i IP addresses..."
-        ip a flush dev $i
+    for i in $(ls /sys/class/net/) ; do
+        /usr/sbin/ip addr flush $i &
     done
     routes=($(ip r | awk '{print $1}'))
     for i in "${routes[@]}"; do
@@ -365,17 +449,12 @@ init_temp_internet() {
     # Check to see if the Internet is already accessible
     if ping -c 1 -n -w 1 1.1.1.1 &> /dev/null; then
         console_message "The Internet is already accessible."
-        if [ -z "$(ip r | grep default | grep $LAN_PORT)" ]; then
-            console_message "WARNING: Internet access is routable via the LAN port: $LAN_PORT. This is not a good idea."
-        fi
-        console_message "WARNING: The /etc/network/interfaces file will be reconfigured."
-        read -t 10 -p "You have 10 seconds to press Ctrl+C to cancel this install." ;
-        echo ""
     else
         # Remove the default gateway
         ip r d default
         # Cycle through WAN ports to find working DHCP and Internet connection
-        for iface in "${WAN_IFACES[@]}"; do
+        if [ -z "$WAN_IFACES" ]; then WAN_TRY=($WAN_VMBRS); else WAN_TRY=($WAN_IFACES); fi
+        for iface in "${WAN_TRY[@]}"; do
             console_message "Attempting to use $iface for temporary Internet access."
             dhclient $iface
             printf "%s" "Waiting for Internet access ..."
@@ -402,6 +481,7 @@ init_temp_internet() {
 }
 
 get_prerequisites() {
+    console_message "Downloading missing prerequisites..."
     # Fix no-subscription repo
     if [ -f /etc/apt/sources.list.d/pve-enterprise.list ]; then
         if [ ! -z "$(pvesubscription get | grep status | grep -v NotFound)" ]; then
@@ -454,21 +534,66 @@ get_prerequisites() {
 }
 
 bootstrap_network() {
-    console_message "Bootstraping network configuration. Please wait..."
-    if [ -z "$MAN_CIDR" ]; then
-        vmbr=$(ip -j a | jq -r '.[] | select(.ifname == "'$MAN_IFACE'") | .master')
-        if [ "null" = "$vmbr" ]; then
-            MAN_CIDR=$(ip -j a | jq -r '.[] | select(.ifname=="'$MAN_IFACE'") | .addr_info[] | select(.family=="inet") | .local + "/" + (.prefixlen|tostring)')
+    if [[ ! -z "$MAN_IFACE" || ! -z "$LAN_IFACES" ||  ! -z "$WAN_IFACES" ]]; then
+        console_message "Bootstraping network configuration. Please wait..."
+        MAN_NET=$(ipcalc $MAN_CIDR | grep Network | awk '{print $2}')
+        MAN_MASK=$(echo $MAN_NET | awk -F/ '{print $2}')
+        IPS=$(echo $MAN_NET | awk -F/ '{print $1}')/30
+        OPNSENSE_MAN_IP=$(ipcalc $IPS | grep HostMin | awk '{print $2}')
+        PVE_MAN_IP=$(ipcalc $IPS | grep HostMax | awk '{print $2}')
+        configure_network
+    else
+        if [ ! -z "$MAN_VMBR" ]; then 
+            man_cidr=$(ip -j a | jq -r '.[] | select(.ifname=="'$MAN_VMBR'") | .addr_info[] | select(.family=="inet") | .local + "/" + (.prefixlen|tostring)')
+            if validate_cidr $man_cidr; then 
+                console_message "Scanning for usable IP address for the OPNsense managment network..."
+                PVE_MAN_IP=$(echo "$man_cidr" | awk -F/ '{print $1}')
+                MAN_MIN_IP=$(ipcalc $man_cidr | grep HostMin | awk '{print $2}')
+                MAX_MIN_IP=$(ipcalc $man_cidr | grep HostMax | awk '{print $2}')
+                i=1
+                while [ -z "$OPNSENSE_MAN_IP" ]; do
+                    echo $i
+                    if [ "$next_man_ip" = "MAN_MIN_IP" ]; then
+                        console_message "ERROR!!! Cannot find a suitable IP address for the OPNsense management interface."
+                        exit 6
+                    fi
+                    case $i in
+                        1) if ! ping -c 1 -n -w 1 $MAN_MIN_IP &> /dev/null; then OPNSENSE_MAN_IP=$MAN_MIN_IP; fi ;;
+                        2) if ! ping -c 1 -n -w 1 $MAN_MIN_IP &> /dev/null; then OPNSENSE_MAN_IP=$MAN_MIN_IP; else next_man_ip=$(shift_ip $MAN_MIN_IP +1); fi ;;
+                        *) if ! ping -c 1 -n -w 1 $next_man_ip &> /dev/null; then OPNSENSE_MAN_IP=$next_man_ip; else next_man_ip=$(shift_ip $next_man_ip +1); fi ;;
+                    esac
+                    ((i+=1))
+                done
+            else
+                console_message "ERROR!!! Something went wrong setting up the Management netowrk."
+                exit 6
+            fi
         else
-            MAN_CIDR=$(ip -j a | jq -r '.[] | select(.ifname=="'$vmbr'") | .addr_info[] | select(.family=="inet") | .local + "/" + (.prefixlen|tostring)')
+            vmbrs=($(ip -j a | jq -r 'sort_by((.ifname | explode | map(-.))) | .[] | select(.ifname | startswith("vmbr")) | .ifname'))
+            if [ -z "$vmbrs" ]; then next_vmbr=vmbr0; else next_vmbr="vmbr$((${vmbrs[0]:4}+1))"; fi
+            MAN_NET=$(ipcalc $MAN_CIDR | grep Network | awk '{print $2}')
+            MAN_MASK=$(echo $MAN_NET | awk -F/ '{print $2}')
+            IPS=$(echo $MAN_NET | awk -F/ '{print $1}')/30
+            OPNSENSE_MAN_IP=$(ipcalc $IPS | grep HostMin | awk '{print $2}')
+            PVE_MAN_IP=$(ipcalc $IPS | grep HostMax | awk '{print $2}')
+            cat >> /etc/network/interfaces <<EOF
+auto $next_vmbr
+iface $next_vmbr inet manual
+    address $PVE_MAN_IP/$MAN_MASK
+    gateway $OPNSENSE_MAN_IP
+    bridge_stp off
+    bridge_fd 0
+
+EOF
         fi
     fi
-    MAN_NET=$(ipcalc $MAN_CIDR | grep Network | awk '{print $2}')
-    MAN_MASK=$(echo $MAN_NET | awk -F/ '{print $2}')
-    IPS=$(echo $MAN_NET | awk -F/ '{print $1}')/30
-    OPNSENSE_MAN_IP=$(ipcalc $IPS | grep HostMin | awk '{print $2}')
-    PVE_MAN_IP=$(ipcalc $IPS | grep HostMax | awk '{print $2}')
-    configure_network
+    service networking restart
+
+    # Set OPNSense as gateway and DNS
+    ip r d default
+    ip r a default via $OPNSENSE_MAN_IP
+    echo nameserver $OPNSENSE_MAN_IP > /etc/resolv.conf
+    cp /etc/network/interfaces /etc/pve/local/opnsense/interfaces
 }
 
 configure_network() {
@@ -482,6 +607,7 @@ EOF
     # Setup bridge for the management port
     j=0
 if [ ! -z "$MAN_IFACE" ]; then
+    MAN_VMBR=vmbr$j
     cat >> /etc/network/interfaces <<EOF
 iface $MAN_IFACE inet manual
 
@@ -507,6 +633,7 @@ EOF
     # Setup bridges for the LANs
     for i in "${LAN_IFACES[@]}"; do
         ((j+=1))
+        LAN_VMBRS+=(vmbr$j)
         cat >> /etc/network/interfaces <<EOF
 iface $i inet manual
 
@@ -522,6 +649,7 @@ EOF
     # Setup bridges for the WANs
     for i in "${WAN_IFACES[@]}"; do
         ((j+=1))
+        WAN_VMBRS+=(vmbr$j)
         cat >> /etc/network/interfaces <<EOF
 iface $i inet manual
 
@@ -533,14 +661,6 @@ iface vmbr$j inet manual
 
 EOF
     done
-    
-    service networking restart
-
-    # Set OPNSense as gateway and DNS
-    ip r d default
-    ip r a default via $OPNSENSE_MAN_IP
-    echo nameserver $OPNSENSE_MAN_IP > /etc/resolv.conf
-    cp /etc/network/interfaces /etc/pve/local/opnsense/interfaces
 }
 
 # Setup SSH keys
@@ -586,7 +706,7 @@ set_opnsense_base_config() {
     vtnet_id=1
     ## LAN
     lan_id=1
-    for i in "${LAN_IFACES[@]}"; do
+    for i in "${LAN_VMBRS[@]}"; do
         iface="lan$lan_id"
         descr="LAN$lan_id"
         xml_update '.opnsense.interfaces.'$iface'={"enable":1,"if":"vtnet'$vtnet_id'","descr":"'$descr'"}' $config_path
@@ -597,7 +717,7 @@ set_opnsense_base_config() {
     ## WAN
     wan_id=1
     xml_update 'del(.opnsense.interfaces.wan)' $config_path
-    for i in "${WAN_IFACES[@]}"; do
+    for i in "${WAN_VMBRS[@]}"; do
         iface="wan$wan_id"
         descr="WAN$wan_id"
         if [ $wan_id = 1 ]; then enable='"enable":1,'; else enable=''; fi
@@ -745,19 +865,17 @@ bootstrap_opnsense() {
         --vga serial0
 
     # Add Management interface to VM
-    qm set $VM_ID --net0 virtio,bridge=vmbr0
+    qm set $VM_ID --net0 virtio,bridge=$MAN_VMBR
 
     j=1
-    # Add LAN interfaces to VM
-    for i in "${LAN_IFACES[@]}"; do
-        vmbr=$(ip -j a | jq -r '.[] | select(.ifname == "'$i'") | .master')
-        qm set $VM_ID --net$j virtio,bridge=$vmbr
+    # Add LAN bridges to VM
+    for i in "${LAN_VMBRS[@]}"; do
+        qm set $VM_ID --net$j virtio,bridge=$i
         ((j+=1))
     done
-    # Add WAN interfaces to VM
-    for i in "${WAN_IFACES[@]}"; do
-        vmbr=$(ip -j a | jq -r '.[] | select(.ifname == "'$i'") | .master')
-        qm set $VM_ID --net$j virtio,bridge=$vmbr
+    # Add WAN bridges to VM
+    for i in "${WAN_VMBRS[@]}"; do
+        qm set $VM_ID --net$j virtio,bridge=$i
         ((j+=1))
     done
     # Add USB devices to VM
@@ -948,16 +1066,10 @@ config_opnsense_zerotier() {
     ZT_MIN_IP=$(ipcalc ${ZT_CIDR[0]} | grep HostMin | awk '{print $2}')
     ZT_MAX_IP=$(ipcalc ${ZT_CIDR[0]} | grep HostMax | awk '{print $2}')
     ZT_BC_IP=$(ipcalc ${ZT_CIDR[0]} | grep Broadcast | awk '{print $2}')
-    case "$(echo $OPNSENSE_ZT1_IP | awk -F. '{print $3}')" in
-        1)
-            config_opnsense_router_discovery
-            config_opnsense_router
-        ;;
-        *)
-            console_message "Based on the third octet in the IP address provided by Zerotier, there is no configuration method defined in this script."
-            exit 6
-        ;;
-    esac
+    
+    config_opnsense_router_discovery
+    config_opnsense_router_discovery
+    
     scp -r $OPNSENSE_MAN_IP:/var/db/zerotier-one /etc/pve/local/opnsense/zerotier
 }
 config_opnsense_router_discovery() {
@@ -1094,12 +1206,10 @@ if [ "$1" = "reset-config" ]; then
     exit
 fi
 
-# Bootstrap Host
+# Prerequisites
 backup_networking
 init_temp_internet
 get_prerequisites
-bootstrap_network
-prepare_ssh_key
 
 # Default user/pass
 OPN_USER=root
@@ -1122,6 +1232,8 @@ else
 fi
 
 # OPNsense Build
+bootstrap_network
+prepare_ssh_key
 bootstrap_opnsense
 init_opnsense
 first_time_ssh
