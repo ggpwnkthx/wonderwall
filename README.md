@@ -1,51 +1,79 @@
 # wonderwall
 Script to help automate installing and configuring OPNsense on Proxmox
 
-## Script Variables
-
-### OPNS_VER
-
-Default: 20.1
-
-Explanation: This is used to set which version of OPNsense to download. The script will use wget to download: http://mirror.wdc1.us.leaseweb.net/opnsense/releases/$OPNS_VER/OPNsense-$OPNS_VER-OpenSSL-nano-amd64.img.bz2
-
-To-do: Mirror selection
-
-### LAN_PORT
-
-Default: eth0
-
-Explanation: Interface used for the site's LAN. The expectation is that this port is plugged into a physical switch. It is also set up as a virtual bridge that can be used by other virtual machines. DHCP service will be configured to use the upper half of the subnet provided.
-
-To-do: Allow for multiple LANs
-
-### LAN_CIDR
-
-Default: 10.2.0.0/16
-
-Explanation: This is the CIDR used to set up the site's LAN. The interface "vmbr0" on the host machine will be configured with the second available IP address in the CIDR's range. The "LAN" port in the OPNsense virtual machine will be configured to use the first available IP address in the CIDR's range.
-
-### WAN_PORTS
-
-Default: eth1,eth2,eth3
-
-Explanation: This is a comma separated list of interfaces that will be used to set up "WAN" ports in the OPNsense virtual machine. Each interface will be setup via DHCP, a Gateway entry will be created for each port, each Gateway will be added to a Failover group.
-
-To-do: Allow for gateway loadbalancing, not just failover.
-
-### WWAN_USB
-
-Default: 10a9:6064
-
-Expanation: Any ethernet based USB device would work here, but it's intended purpose is to passthru USB cellular devices that are ethernet based. For example the Pantech UML295.
-
-To-do: Allow for other WWAN devices that arn't ethernet based.
-
-### ZT_ID
-
-Default: (blank)
-
-Explanation: This is the ID of the Zerotier network you want to use for 
+## Script Options
+    --opnsense-version
+        Description: Version of OPNsense to download and use. Updates will be
+                        run, so it's rare this would ever need to be set.
+        Optional:    Yes
+        Default:     20.7
+    --man-vmbr
+        Description: L3 bridge to use for the Management interface. If no value
+                        is given a L3 bridge with no interfaces will be created.
+        Example:     vmbr0
+    --man-iface
+        Description: Physical interface for the management network.
+                     If no interface is given a L3 bridge with no interfaces
+                        will be created.
+        Example:     ens1
+        WARNING:     Using this option will replace the current network config.
+    --man-cidr
+        Description: CIDR used by the Management network.
+                     OPNsense will be configured to use the first available IP
+                        address. Proxmox will be configured to use the second
+                        available IP address.
+        Default:     192.168.1.0/24
+    --lan-vmbrs
+        Description: Comma delimited list of L3 bridges defined by Proxmox. 
+                     Each bridge will be configured in OPNsense as an individual
+                        interface. Each interface in OPNsense will be
+                        configured based on the IP addressed provided by
+                        Zerotier, relative to the --zt-lan-cidr value. DHCP 
+                        services will be configure for the last half of the 
+                        subnet.
+        Example:     vmbr1,vmbr2
+    --lan-ifaces
+        Description: Comma delimited list of physical interfaces used for LANs. 
+                     Each interface will have it's own L3 bridge. Each bridge
+                        will be configured in OPNsense as an individual
+                        interface. Each interface in OPNsense will be
+                        configured based on the IP addressed provided by
+                        Zerotier, relative to the --zt-lan-cidr value. DHCP 
+                        services will be configure for the last half of the 
+                        subnet.
+        Example:     eth0,eth1,eth2,eth3
+        WARNING:     Using this option will replace the current network config.
+    --wan-vmbrs
+        Description: Comma delimited list of L3 bridges defined by Proxmox.
+                     Each bridge will be configured in OPNsense as an individual
+                        interface. Each interface in OPNsense DHCP will be used
+                        on all interfaces. WAN failover will be automatically 
+                        configured in a tier based on the provided order.
+        Example:     vmbr3,vmbr4
+    --wan-ifaces
+        Description: Comma delimited list of physical interfaces used for WANs.
+                     Each interface will have it's own L3 bridge. Each bridge
+                        will be configured in OPNsense as an individual
+                        interface. Each interface in OPNsense DHCP will be used
+                        on all interfaces. WAN failover will be automatically 
+                        configured in a tier based on the provided order.
+        Example:     eno1,eno2,eno3,eno4
+        WARNING:     Using this option will replace the current network config.
+    --usb-ids
+        Description: Comma delimited list of USB Device IDs. 
+                     **Must be USB Ethernet devices.
+        Example:     10a9:6064
+    --zt-net-id
+        Description: Zerotier Network ID to join.
+        Example:     1234567890abcdef
+    --zt-lan-cidr
+        Description: Starting CIDR for LANs defined by assigned Zerotier IPs
+        Default:     10.0.0.0/16
+    --revert
+        Description: Revert changes, made by the installer script, back to
+                        right before the first time the script was run.
+    --help
+        Description: Displays this message.
 
 ## Zerotier Configuration
 
