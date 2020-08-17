@@ -51,18 +51,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo OPNS_VER=$OPNS_VER
-echo MAN_VMBR=$MAN_VMBR
-echo MAN_IFACE=$MAN_IFACE
-echo MAN_CIDR=$MAN_CIDR
-echo LAN_VMBRS=$LAN_VMBRS
-echo LAN_IFACES=$LAN_IFACES
-echo WAN_VMBRS=$WAN_VMBRS
-echo WAN_IFACES=$WAN_IFACES
-echo USB_IDS=$USB_IDS
-echo ZT_ID=$ZT_ID
-echo ZT_LAN_MAP=$ZT_LAN_MAP
-
 if [ $HELP ]; then
     cat <<EOF
 WONDERWALL INSTALLATION SCRIPT OPTIONS:
@@ -79,7 +67,7 @@ WONDERWALL INSTALLATION SCRIPT OPTIONS:
         Description: Physical interface for the management network.
                      If no interface is given a L3 bridge with no interfaces
                         will be created.
-        Example:     ens1
+        Example:     eno1
         WARNING:     Using this option will replace the current network config.
     --man-cidr
         Description: CIDR used by the Management network.
@@ -105,7 +93,7 @@ WONDERWALL INSTALLATION SCRIPT OPTIONS:
                         Zerotier, relative to the --zt-lan-cidr value. DHCP 
                         services will be configure for the last half of the 
                         subnet.
-        Example:     eth0,eth1,eth2,eth3
+        Example:     eno1,eno2,eno3,eno4
         WARNING:     Using this option will replace the current network config.
     --wan-vmbrs
         Description: Comma delimited list of L3 bridges defined by Proxmox.
@@ -154,64 +142,6 @@ console_message() {
     output+='╚══════════════════════════════════════════════════════════════════════════════╝'
     echo "$output" 1>&2
 }
-
-# Input Validation Checks
-## Make sure we have some sort of networks to work with
-if [[ -z "$MAN_VMBR" && -z "$LAN_VMBRS" && -z "$WAN_VMBRS" && -z "$MAN_IFACE" && -z "$LAN_IFACES" && -z "$WAN_IFACES" ]]; then
-    console_message "ERROR!!! No interfaces of bridges specifed so there's nothing to set up."
-    exit 6
-fi
-## Do not allow VMBR and IFACE combos
-vmbr_iface_error="ERROR!!! You cannot use any combination of the --xxx-vmbr(s) and --xxx-iface(s) options. When the --man-iface, --lan-ifaces, and/or --wan-ifaces options are used, the network configuration is completely replaced."
-if [[ ! -z "$MAN_VMBR" || ! -z "$LAN_VMBRS" ||  ! -z "$WAN_VMBRS" ]]; then
-    if [[ ! -z "$MAN_IFACE" || ! -z "$LAN_IFACES" ||  ! -z "$WAN_IFACES" ]]; then
-        console_message $vmbr_iface_error
-        exit 6
-    fi
-fi
-## Validate CIDR
-validate_cidr() {
-    if [[ ! "$1" =~ ^([0-9\.\/]*$) ]]; then return 1; fi
-    IFS="./" read -r ip1 ip2 ip3 ip4 N <<< $1
-    if [[ -z $ip1 || -z $ip2 || -z $ip3 || -z $ip4 || -z $N ]]; then return 1; fi
-    if [[ $ip1 -gt 255 || $ip2 -gt 255 || $ip3 -gt 255 || $ip4 -gt 255 || $N -gt 32 ]]; then return 1; fi
-    return 0
-}
-if ! validate_cidr $MAN_CIDR; then console_message "ERROR!!! --man-cidr \"$MAN_CIDR\" is not valid CIDR notation."; exit 6; fi
-if ! validate_cidr $ZT_LAN_MAP; then console_message "ERROR!!! --zt-lan-cidr \"$ZT_LAN_MAP\" is not valid CIDR notation."; exit 6; fi
-## Zerotier Network ID
-if [[ ! "$ZT_ID" =~ ^([0-9a-fA-F]*$) ]] || [ $(echo $ZT_ID | wc -c) -ne 17 ]; then console_message "ERROR!!! --zt-net-id \"$ZT_ID\" is not a valid Zerotier network ID."; exit 6; fi
-
-# Convert LAN_VMBRS to array
-if [[ "$LAN_VMBRS" == *","* ]]; then 
-    IFS=',' read -r -a LAN_VMBRS <<< "$LAN_VMBRS"
-else
-    LAN_VMBRS=($LAN_VMBRS)
-fi
-# Convert LAN_IFACES to array
-if [[ "$LAN_IFACES" == *","* ]]; then 
-    IFS=',' read -r -a LAN_IFACES <<< "$LAN_IFACES"
-else
-    LAN_IFACES=($LAN_IFACES)
-fi
-# Convert WAN_VMBRS to array
-if [[ "$WAN_VMBRS" == *","* ]]; then 
-    IFS=',' read -r -a WAN_VMBRS <<< "$WAN_VMBRS"
-else
-    WAN_VMBRS=($WAN_VMBRS)
-fi
-# Convert WAN_IFACES to array
-if [[ "$WAN_IFACES" == *","* ]]; then 
-    IFS=',' read -r -a WAN_IFACES <<< "$WAN_IFACES"
-else
-    WAN_IFACES=($WAN_IFACES)
-fi
-# Convert USB_IDS to array
-if [[ "$USB_IDS" == *","* ]]; then 
-    IFS=',' read -r -a USB_IDS <<< "$USB_IDS"
-else
-    USB_IDS=($USB_IDS)
-fi
 
 clear_network() {
     for i in $(ls /sys/class/net/) ; do
@@ -276,6 +206,64 @@ ask_revert() {
         esac
     done
 }
+
+# Input Validation Checks
+## Make sure we have some sort of networks to work with
+if [[ -z "$MAN_VMBR" && -z "$LAN_VMBRS" && -z "$WAN_VMBRS" && -z "$MAN_IFACE" && -z "$LAN_IFACES" && -z "$WAN_IFACES" ]]; then
+    console_message "ERROR!!! No interfaces of bridges specifed so there's nothing to set up."
+    exit 6
+fi
+## Do not allow VMBR and IFACE combos
+vmbr_iface_error="ERROR!!! You cannot use any combination of the --xxx-vmbr(s) and --xxx-iface(s) options. When the --man-iface, --lan-ifaces, and/or --wan-ifaces options are used, the network configuration is completely replaced."
+if [[ ! -z "$MAN_VMBR" || ! -z "$LAN_VMBRS" ||  ! -z "$WAN_VMBRS" ]]; then
+    if [[ ! -z "$MAN_IFACE" || ! -z "$LAN_IFACES" ||  ! -z "$WAN_IFACES" ]]; then
+        console_message $vmbr_iface_error
+        exit 6
+    fi
+fi
+## Validate CIDR
+validate_cidr() {
+    if [[ ! "$1" =~ ^([0-9\.\/]*$) ]]; then return 1; fi
+    IFS="./" read -r ip1 ip2 ip3 ip4 N <<< $1
+    if [[ -z $ip1 || -z $ip2 || -z $ip3 || -z $ip4 || -z $N ]]; then return 1; fi
+    if [[ $ip1 -gt 255 || $ip2 -gt 255 || $ip3 -gt 255 || $ip4 -gt 255 || $N -gt 32 ]]; then return 1; fi
+    return 0
+}
+if ! validate_cidr $MAN_CIDR; then console_message "ERROR!!! --man-cidr \"$MAN_CIDR\" is not valid CIDR notation."; exit 6; fi
+if ! validate_cidr $ZT_LAN_MAP; then console_message "ERROR!!! --zt-lan-cidr \"$ZT_LAN_MAP\" is not valid CIDR notation."; exit 6; fi
+## Zerotier Network ID
+if [[ ! "$ZT_ID" =~ ^([0-9a-fA-F]*$) ]] || [ $(echo $ZT_ID | wc -c) -ne 17 ]; then console_message "ERROR!!! --zt-net-id \"$ZT_ID\" is not a valid Zerotier network ID."; exit 6; fi
+
+# Convert LAN_VMBRS to array
+if [[ "$LAN_VMBRS" == *","* ]]; then 
+    IFS=',' read -r -a LAN_VMBRS <<< "$LAN_VMBRS"
+else
+    LAN_VMBRS=($LAN_VMBRS)
+fi
+# Convert LAN_IFACES to array
+if [[ "$LAN_IFACES" == *","* ]]; then 
+    IFS=',' read -r -a LAN_IFACES <<< "$LAN_IFACES"
+else
+    LAN_IFACES=($LAN_IFACES)
+fi
+# Convert WAN_VMBRS to array
+if [[ "$WAN_VMBRS" == *","* ]]; then 
+    IFS=',' read -r -a WAN_VMBRS <<< "$WAN_VMBRS"
+else
+    WAN_VMBRS=($WAN_VMBRS)
+fi
+# Convert WAN_IFACES to array
+if [[ "$WAN_IFACES" == *","* ]]; then 
+    IFS=',' read -r -a WAN_IFACES <<< "$WAN_IFACES"
+else
+    WAN_IFACES=($WAN_IFACES)
+fi
+# Convert USB_IDS to array
+if [[ "$USB_IDS" == *","* ]]; then 
+    IFS=',' read -r -a USB_IDS <<< "$USB_IDS"
+else
+    USB_IDS=($USB_IDS)
+fi
 
 # Revert system if script is cancelled or aborted
 trap ask_revert SIGINT
@@ -701,7 +689,7 @@ set_opnsense_base_config() {
     # Interfaces
     ## Management (OPNsense requires in interface specifically named lan)
     xml_update '.opnsense.interfaces.lan={"enable":1,"if":"vtnet0","descr":"Management","ipaddr":"'$OPNSENSE_MAN_IP'","subnet":"'$MAN_MASK'","blockbogons":1}' $config_path
-    opnsense_firewall_rules+='{"type":"pass","interface":"lan","ipprotocol":"inet46","statetype":"keep state","descr":"Default Allow","direction":"in","quick":1,"source":{"any":1},"destination":{"any":1}},'
+    opnsense_filter_rules+='{"type":"pass","interface":"lan","ipprotocol":"inet46","statetype":"keep state","descr":"Default Allow","direction":"in","quick":1,"source":{"any":1},"destination":{"any":1}},'
     
     vtnet_id=1
     ## LAN
@@ -720,8 +708,7 @@ set_opnsense_base_config() {
     for i in "${WAN_VMBRS[@]}"; do
         iface="wan$wan_id"
         descr="WAN$wan_id"
-        if [ $wan_id = 1 ]; then enable='"enable":1,'; else enable=''; fi
-        xml_update '.opnsense.interfaces.'$iface'={'$enable'"if":"vtnet'$vtnet_id'","descr":"'$descr'","ipaddr":"dhcp","ipaddrv6":"dhcp6","blockbogons":1}' $config_path
+        xml_update '.opnsense.interfaces.'$iface'={"enable":1,"if":"vtnet'$vtnet_id'","descr":"'$descr'","ipaddr":"dhcp","ipaddrv6":"dhcp6","blockbogons":1}' $config_path
         opnsense_gateway_items+='{"interface":"'$iface'","gateway":"dynamic","name":"'$descr'_DHCP","priority":'$(($wan_id*10+100))',"weight":1,"ipprotocol":"inet","monitor":"1.0.0.'$j'"},'
         opnsense_gateway_groupv4_item+='"'$descr'_DHCP|'$wan_id'",'
         opnsense_gateway_items+='{"interface":"'$iface'","gateway":"dynamic","name":"'$descr'_DHCP6","priority":'$(($wan_id*10+105))',"weight":1,"ipprotocol":"inet6","monitor":"2606:4700:4700::100'$j'"},'
@@ -735,7 +722,7 @@ set_opnsense_base_config() {
     for i in "${USB_IDS[@]}"; do
         iface="wwan$usb_id"
         descr="WWAN$usb_id"
-        xml_update '.opnsense.interfaces.'$iface'={"if":"ue'$(($usb_id-1))'","descr":"'$descr'","ipaddr":"dhcp","ipaddrv6":"dhcp6","blockbogons":1}' $config_path
+        xml_update '.opnsense.interfaces.'$iface'={"enable":1,"if":"ue'$(($usb_id-1))'","descr":"'$descr'","ipaddr":"dhcp","ipaddrv6":"dhcp6","blockbogons":1}' $config_path
         opnsense_gateway_items+='{"interface":"'$iface'","gateway":"dynamic","name":"'$descr'_DHCP","priority":'$(($wan_id*10+100))',"weight":1,"ipprotocol":"inet","monitor":"1.0.0.'$j'"},'
         opnsense_gateway_groupv4_item+='"'$descr'_DHCP|'$wan_id'",'
         opnsense_gateway_items+='{"interface":"'$iface'","gateway":"dynamic","name":"'$descr'_DHCP6","priority":'$(($wan_id*10+105))',"weight":1,"ipprotocol":"inet6","monitor":"2606:4700:4700::100'$j'"},'
@@ -778,13 +765,23 @@ set_opnsense_base_config() {
     xml_update '.opnsense.OPNsense.Firewall.Alias.aliases.alias=['$opnsense_aliases']' $config_path
 
     # Firewall
-    ## LAN to Internet via Failover
-    opnsense_firewall_rules+='{"type":"pass","interface":"LANs","ipprotocol":"inet","statetype":"keep state","descr":"IPv4 Use Failover Gateway for Internet Traffic","gateway":"Failover_v4","direction":"in","quick":1,"source":{"any":1},"destination":{"address":"PublicAllocatedNets_v4"}},'
-    opnsense_firewall_rules+='{"type":"pass","interface":"LANs","ipprotocol":"inet6","statetype":"keep state","descr":"IPv6 Use Failover Gateway for Internet Traffic","gateway":"Failover_v6","direction":"in","quick":1,"source":{"any":1},"destination":{"address":"PublicAllocatedNets_v6"}},'
-    ## LAN Allow all
-    opnsense_firewall_rules+='{"type":"pass","interface":"LANs","ipprotocol":"inet46","statetype":"keep state","descr":"Default Allow","direction":"in","quick":1,"source":{"any":1},"destination":{"any":1}}'
+    ## NAT
+    ### Port Forwarding
+    opnsense_nat_rules+='{"protocol":"tcp","interface":"LANs","ipprotocol":"inet","descr":"Proxmox GUI","associated-rule-id":"nat_proxmox_gui","target":"'$PVE_MAN_IP'","local-port":8006,"source":{"any":1},"destination":{"network":"(self)","port":8006}},'
+    opnsense_filter_rules+='{"protocol":"tcp","interface":"LANs","ipprotocol":"inet","descr":"Proxmox GUI","associated-rule-id":"nat_proxmox_gui","source":{"any":1},"destination":{"address":"'$PVE_MAN_IP'","port":8006}},'
+    opnsense_nat_rules+='{"protocol":"tcp","interface":"LANs","ipprotocol":"inet","descr":"Proxmox SSH","associated-rule-id":"nat_proxmox_ssh","target":"'$PVE_MAN_IP'","local-port":22,"source":{"any":1},"destination":{"network":"(self)","port":8022}},'
+    opnsense_filter_rules+='{"protocol":"tcp","interface":"LANs","ipprotocol":"inet","descr":"Proxmox GUI","associated-rule-id":"nat_proxmox_ssh","source":{"any":1},"destination":{"address":"'$PVE_MAN_IP'","port":22}},'
+
+    ## Rules
+    ### LANs ---> Internet via Failover
+    opnsense_filter_rules+='{"type":"pass","interface":"LANs","ipprotocol":"inet","statetype":"keep state","descr":"IPv4 Use Failover Gateway for Internet Traffic","gateway":"Failover_v4","direction":"in","quick":1,"source":{"any":1},"destination":{"address":"PublicAllocatedNets_v4"}},'
+    opnsense_filter_rules+='{"type":"pass","interface":"LANs","ipprotocol":"inet6","statetype":"keep state","descr":"IPv6 Use Failover Gateway for Internet Traffic","gateway":"Failover_v6","direction":"in","quick":1,"source":{"any":1},"destination":{"address":"PublicAllocatedNets_v6"}},'
+    ### LANs <--> LANs
+    opnsense_filter_rules+='{"type":"pass","interface":"LANs","ipprotocol":"inet46","statetype":"keep state","descr":"Default Allow","direction":"in","quick":1,"source":{"any":1},"destination":{"any":1}}'
+
     ## Commit
-    xml_update '.opnsense.filter.rule=['$opnsense_firewall_rules']' $config_path
+    xml_update '.opnsense.nat.rule=['${opnsense_nat_rules%?}']' $config_path
+    xml_update '.opnsense.filter.rule=['$opnsense_filter_rules']' $config_path
 
     # ------------------------------------------------------------------------------- #
     #                      END OPNSENSE CONFIG.XML MODIFICATIONS                      #
@@ -1120,6 +1117,8 @@ config_opnsense_router() {
         done
         lan_ip=$(ipcalc $lan_cidr | grep HostMin | awk '{print $2}')
 
+        console_message "Configuring LAN$i as $lan_cidr..."
+
         # LAN Interfaces
         xml_update '.opnsense.interfaces.lan'$i'.ipaddr="'$lan_ip'"' $config_path
         xml_update '.opnsense.interfaces.lan'$i'.subnet="'$lan_mask'"' $config_path
@@ -1127,9 +1126,7 @@ config_opnsense_router() {
         dhcp_mask=$(($lan_mask+1))
         dhcp_from=$(ip_shift $(ipcalc $lan_ip/$dhcp_mask | grep Broadcast | awk '{print $2}') +2)
         dhcp_to=$(ipcalc $lan_cidr | grep HostMax | awk '{print $2}')
-        xml_update '.opnsense.dhcpd.lan'$i'.enable=1' $config_path
-        xml_update '.opnsense.dhcpd.lan'$i'.domainsearchlist="'$DOMAIN_NAME'"' $config_path
-        xml_update '.opnsense.dhcpd.lan'$i'.range={"from":"'$dhcp_from'","to":"'$dhcp_to'"}' $config_path
+        xml_update '.opnsense.dhcpd.lan'$i'={"enable":1,"domain":"'$DOMAIN_NAME'","domainsearchlist:"'$DOMAIN_NAME'",range={"from":"'$dhcp_from'","to":"'$dhcp_to'"}}' $config_path
         # VirtualIP
         if [ "$zt_ip" != "$OPNSENSE_ZT1_IP" ]; then
             console_message "$zt_ip is not the primary IP address for the Zerotier network ($ZT_ID) and will be added as a Virtual IP."
