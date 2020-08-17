@@ -1065,7 +1065,7 @@ config_opnsense_zerotier() {
     ZT_BC_IP=$(ipcalc ${ZT_CIDR[0]} | grep Broadcast | awk '{print $2}')
     
     config_opnsense_router_discovery
-    config_opnsense_router_discovery
+    config_opnsense_router
     
     scp -r $OPNSENSE_MAN_IP:/var/db/zerotier-one /etc/pve/local/opnsense/zerotier
 }
@@ -1126,7 +1126,7 @@ config_opnsense_router() {
         dhcp_mask=$(($lan_mask+1))
         dhcp_from=$(ip_shift $(ipcalc $lan_ip/$dhcp_mask | grep Broadcast | awk '{print $2}') +2)
         dhcp_to=$(ipcalc $lan_cidr | grep HostMax | awk '{print $2}')
-        xml_update '.opnsense.dhcpd.lan'$i'={"enable":1,"domain":"'$DOMAIN_NAME'","domainsearchlist:"'$DOMAIN_NAME'",range={"from":"'$dhcp_from'","to":"'$dhcp_to'"}}' $config_path
+        xml_update '.opnsense.dhcpd.lan'$i'={"enable":1,"domain":"'$DOMAIN_NAME'","domainsearchlist":"'$DOMAIN_NAME'",range={"from":"'$dhcp_from'","to":"'$dhcp_to'"}}' $config_path
         # VirtualIP
         if [ "$zt_ip" != "$OPNSENSE_ZT1_IP" ]; then
             console_message "$zt_ip is not the primary IP address for the Zerotier network ($ZT_ID) and will be added as a Virtual IP."
