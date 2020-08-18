@@ -276,7 +276,7 @@ command_exists() {
 
 # DNS Ping
 ding() {
-    if [ -z "$(dig +time=1 +tries=4 @$1 | grep 'connection timed out')" ]; then return 0; else return 1; fi
+    if [ -z "$(dig +time=3 +tries=10 @$1 | grep 'connection timed out')" ]; then return 0; else return 1; fi
 }
 
 # xq wrapper to get json output of a current value
@@ -1126,7 +1126,7 @@ config_opnsense_router() {
         dhcp_mask=$(($lan_mask+1))
         dhcp_from=$(ip_shift $(ipcalc $lan_ip/$dhcp_mask | grep Broadcast | awk '{print $2}') +2)
         dhcp_to=$(ipcalc $lan_cidr | grep HostMax | awk '{print $2}')
-        xml_update '.opnsense.dhcpd.lan'$i'={"enable":1,"domain":"'$DOMAIN_NAME'","domainsearchlist":"'$DOMAIN_NAME'",range={"from":"'$dhcp_from'","to":"'$dhcp_to'"}}' $config_path
+        xml_update '.opnsense.dhcpd.lan'$i'={"enable":{},"range":{"from":"'$dhcp_from'","to":"'$dhcp_to'"},"domain":"'$DOMAIN_NAME'","domainsearchlist":"'$DOMAIN_NAME'"}' $config_path
         # VirtualIP
         if [ "$zt_ip" != "$OPNSENSE_ZT1_IP" ]; then
             console_message "$zt_ip is not the primary IP address for the Zerotier network ($ZT_ID) and will be added as a Virtual IP."
