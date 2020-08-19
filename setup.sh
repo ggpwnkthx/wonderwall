@@ -160,6 +160,8 @@ revert() {
     console_message "Reverting changes as best we can... "
     int_bak=($(find /etc/network/ -name interfaces.*.bak))
     if [ -f ${int_bak[0]} ]; then cp ${int_bak[0]} /etc/network/interfaces; fi
+    res_bak=($(find /etc/ -name resolve.conf.*.bak))
+    if [ -f ${res_bak[0]} ]; then cp ${res_bak[0]} /etc/resolve.conf; fi
     VM_ID=$(qm list | grep OPNsense | awk '{print $1}')
     if [ ! -z "$VM_ID" ]; then
         qm stop $VM_ID
@@ -276,7 +278,7 @@ command_exists() {
 
 # DNS Ping
 ding() {
-    if [ -z "$(dig +time=3 +tries=10 @$1 | grep 'connection timed out')" ]; then return 0; else return 1; fi
+    if [ -z "$(dig +time=3 +tries=5 @$1 | grep 'connection timed out')" ]; then return 0; else return 1; fi
 }
 
 # xq wrapper to get json output of a current value
@@ -431,6 +433,9 @@ backup_networking() {
     iface_bak=/etc/network/interfaces.$(date +%s).bak
     console_message "Backing up /etc/network/interfaces to $iface_bak"
     cp /etc/network/interfaces $iface_bak
+    res_bak=/etc/resolv.conf.$(date +%s).bak
+    console_message "Backing up /etc/resolv.conf to $res_bak"
+    cp /etc/resolv.conf $res_bak
 }
 
 init_temp_internet() {
@@ -444,6 +449,7 @@ init_temp_internet() {
         if [ -z "$WAN_IFACES" ]; then WAN_TRY=($WAN_VMBRS); else WAN_TRY=($WAN_IFACES); fi
         for iface in "${WAN_TRY[@]}"; do
             console_message "Attempting to use $iface for temporary Internet access."
+            mv /etc/resolv.conf 
             dhclient $iface
             printf "%s" "Waiting for Internet access ..."
             i=0
